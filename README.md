@@ -1,83 +1,116 @@
 # FMCW-Radar-MATLAB-Pipeline
 
-End-to-end FMCW radar signal processing pipeline in MATLAB, written to demonstrate practical DSP and radar-processing skills.  
-The pipeline goes from waveform generation to target range/velocity estimation and visualization.
+Complete FMCW radar signal-processing chain implemented in MATLAB.
 
-This repository focuses on clarity and repeatability. It is structured as a standalone learning / experimentation environment, not tied to proprietary hardware or unpublished datasets.
+This project walks through the practical DSP steps behind an FMCW (Frequency-Modulated Continuous Wave) radar: from chirp generation, to dechirping and FFT-based range estimation, to basic range–Doppler analysis. The code is organized as a reproducible pipeline rather than a single monolithic script.
+
+The goal of this repository is to demonstrate:
+- Working understanding of radar DSP (not just plotting signals).
+- Clean, modular MATLAB implementation.
+- Physically consistent parameter selection (chirp slope, sweep time, sampling rate, etc.).
+- Transparent, inspectable processing steps that mirror real radar post-processing.
+
+This repository is self-contained and simulation-driven. It does **not** include proprietary hardware data, unpublished fusion logic, or any system-specific calibration.
 
 ---
 
 ## Core Capabilities
 
-1. FMCW waveform generation  
-   - Defines chirp parameters (bandwidth, slope, PRI, sampling rate).
-   - Simulates transmit (Tx) and receive (Rx) signals for one or more point targets.
+### 1. FMCW waveform generation
+- Defines all chirp parameters (carrier frequency, bandwidth, sweep time, chirp slope, PRI, sampling rate).
+- Generates a train of up-chirps using `phased.FMCWWaveform`.
 
-2. Beat signal extraction  
-   - Mixes Tx and Rx to generate the IF beat signal.
-   - Applies windowing (e.g. Hanning) to control spectral leakage before the FFT.
+### 2. Scene / target simulation
+- Models a moving point target with a given range and radial velocity.
+- Propagates the transmitted signal through free space, applies target radar cross section (RCS), and collects the return.
+- Adds receive-chain gain and controlled AWGN to approximate realistic SNR.
 
-3. Range FFT  
-   - Computes the 1D FFT of the beat signal.
-   - Finds peak frequency and maps it to physical range using radar equations.
+### 3. Beat signal formation
+- Mixes the received and transmitted signals to generate the dechirped IF beat signal.
+- Splits the long capture into individual sweeps (fast-time vs slow-time).
+- Optionally identifies valid up-chirps using instantaneous phase slope.
 
-4. Doppler / velocity estimation  
-   - Models multiple chirps over time.
-   - Uses 2D FFT (range–Doppler map) to separate targets by radial velocity.
+### 4. Range estimation (1D FFT)
+- Applies windowing (Hann window) to control spectral leakage.
+- Computes the FFT of a single chirp’s beat signal.
+- Locates the dominant beat frequency and converts it to physical range using:
+  
+  \[
+  R \approx \frac{c \cdot f_b}{2 \cdot \mu}
+  \]
+  
+  where \( c \) is the speed of light, \( f_b \) is the beat frequency, and \( \mu \) is the chirp slope.
 
-5. Visualization  
-   - Plots:
-     - Time-domain Tx / Rx / beat signals.
-     - Range spectrum (magnitude vs range).
-     - Range–Doppler map (magnitude vs range vs velocity).
-   - Includes annotations showing the estimated range and velocity of the strongest target.
+### 5. Range–Doppler / velocity insight (2D FFT)
+- Uses multiple chirps over slow time.
+- Performs a 2D FFT (fast-time → range, slow-time → Doppler) to visualize how targets separate in both range and radial velocity.
+- Produces a standard range–Doppler magnitude map.
+
+### 6. Visualization
+- Time-domain view of Rx.
+- Range spectrum (magnitude vs estimated range).
+- Range–Doppler heatmap.
+- Printed console output summarizing the estimated target range vs the true simulated range.
+
+All plots in `figures/` are generated directly by the code in `Run_Demo.m`.
 
 ---
 
 ## Repository Layout
 
 `scripts/`
-- `FMCW_Params.m`  
-  Defines all radar parameters (carrier freq, bandwidth, chirp time, Fs, max range, max velocity, etc.) in one place.
 
-- `Sim_TargetScene.m`  
-  Creates one or more simulated targets with specified range and radial velocity, and returns the received signal.
+- `FMCW_Params.m`  
+  Centralizes all radar parameters in one struct (carrier frequency, bandwidth, chirp time, sampling rate, number of sweeps, etc.).  
+  Also calculates derived quantities like chirp slope and expected beat frequency.
 
 - `Generate_Chirp.m`  
-  Generates the FMCW transmit signal (linear up-chirp).
+  Builds the FMCW transmit waveform (a train of linear up-chirps) using the parameters in `FMCW_Params.m`.
+
+- `Sim_TargetScene.m`  
+  Simulates a single moving point target in free space:
+  applies two-way propagation, simple RCS, receiver gain, and AWGN.
+  Returns Tx and Rx as complex baseband signals.
 
 - `Mixer_IFBeat.m`  
-  Mixes Tx and Rx to produce the beat signal (intermediate frequency).
+  Dechirps the received signal by mixing Rx with the conjugate of Tx to produce the IF beat signal.
+  Reshapes the data into [fast-time x slow-time] form (sweeps vs chirps).
+  Also tags up-chirps so slow-time processing stays consistent.
 
 - `RangeFFT.m`  
-  Applies windowing and computes FFT to estimate range.
+  Estimates range from one sweep:
+  1) Window the beat signal  
+  2) FFT and peak-pick the beat frequency  
+  3) Convert that frequency to meters using the FMCW range equation.
 
 - `RangeDopplerFFT.m`  
-  Builds slow-time snapshots and performs 2D FFT to estimate both range and velocity.
+  Builds a basic range–Doppler map using a 2D FFT across fast time (range bins) and slow time (Doppler bins).  
+  Returns magnitude in dB along with physical axes for plotting.
 
 - `Run_Demo.m`  
   High-level script that ties everything together:
-  1. Load parameters
-  2. Simulate target(s)
-  3. Generate Tx/Rx
-  4. Form beat signal
-  5. Compute range / Doppler
-  6. Plot results
+  1. Load parameters  
+  2. Generate waveform  
+  3. Simulate target return  
+  4. Form beat signal per chirp  
+  5. Estimate range from a single sweep  
+  6. Build a range–Doppler map and plot it
 
-`figures/`
-- Example output plots generated by `Run_Demo.m` (PNG).  
-  These make the repo readable without running code.
+`figures/`  
+Example output plots generated by `Run_Demo.m` (PNG).  
+These snapshots make the repository readable even without running MATLAB.
 
-`docs/`
-- `signal_chain_explained.md`  
-  Friendly explanation of the math behind FMCW range and Doppler extraction.
+`docs/`  
+Additional notes and derivations.  
+- `signal_chain_explained.md` gives an accessible walkthrough of the signal chain and math (why we mix, why we FFT, how slope and sweep time set resolution and unambiguous range).
 
 ---
 
 ## Quick Start
 
-1. Open MATLAB or Octave.
-2. Add `scripts/` to your path.
+1. Clone the repo and open MATLAB (or GNU Octave; most of the code is standard MATLAB syntax).
+2. Add the `scripts/` folder to your path.
 3. Run:
-   ```matlab
-   Run_Demo;
+
+```matlab
+Run_Demo
